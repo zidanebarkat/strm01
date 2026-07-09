@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>strm01 Preview</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#0d1117;color:#c9d1d9;font-family:'Segoe UI',sans-serif;text-align:center;padding:20px}
+h1{font-size:20px;margin-bottom:16px;color:#fff}
+.player-wrap{max-width:854px;margin:0 auto;background:#000;border-radius:8px;overflow:hidden;position:relative;aspect-ratio:16/9}
+.player-wrap iframe,.player-wrap video{width:100%;height:100%;border:0}
+.player-wrap.loading::after{content:'Loading...';position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);color:#8b949e;font-size:14px}
+.tabs{display:flex;gap:0;margin-bottom:16px;justify-content:center}
+.tab{padding:8px 20px;background:#21262d;border:1px solid #30363d;color:#8b949e;cursor:pointer;font-size:13px}
+.tab:first-child{border-radius:6px 0 0 6px}
+.tab:last-child{border-radius:0 6px 6px 0}
+.tab.active{background:#1f6feb;color:#fff;border-color:#1f6feb}
+.info{max-width:600px;margin:20px auto;font-size:13px;color:#8b949e;line-height:1.6}
+.info code{background:#21262d;padding:2px 6px;border-radius:3px;font-size:12px}
+</style>
+</head>
+<body>
+<h1>strm01 &#8594; Facebook Preview</h1>
+
+<div class="tabs">
+  <div class="tab active" data-mode="iframe" onclick="switchMode('iframe')">Source Page</div>
+  <div class="tab" data-mode="player" onclick="switchMode('player')">Direct Player</div>
+  <div class="tab" data-mode="facebook" onclick="switchMode('facebook')">Facebook</div>
+</div>
+
+<div id="player-iframe" class="player-wrap loading">
+  <iframe src="" allowfullscreen allow="autoplay;encrypted-media" loading="lazy"></iframe>
+</div>
+
+<div id="player-direct" class="player-wrap loading" style="display:none">
+  <video id="hlsVideo" controls autoplay muted playsinline></video>
+</div>
+
+<div id="player-facebook" class="player-wrap" style="display:none">
+  <iframe id="fbEmbed" src="" allowfullscreen allow="autoplay;encrypted-media" style="background:#fff" loading="lazy"></iframe>
+</div>
+
+<div class="info">
+  <p><strong>Source:</strong> <code id="srcDisplay">https://strm01.vip/?m=30724&amp;lang=ar</code></p>
+  <p>Stream is sent from the source above through FFmpeg to Facebook Live with periodic black overlay + audio filters to avoid false copyright detection.</p>
+  <p><a href="https://github.com/zidanebarkat/strm01" target="_blank" style="color:#58a6ff">View on GitHub</a></p>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+<script>
+const SOURCE = 'https://strm01.vip/?m=30724&lang=ar';
+const FB_PAGE = 'https://www.facebook.com/live/producer/';
+
+function switchMode(mode) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelector('.tab[data-mode="'+mode+'"]').classList.add('active');
+  document.getElementById('player-iframe').style.display = mode === 'iframe' ? 'block' : 'none';
+  document.getElementById('player-direct').style.display = mode === 'player' ? 'block' : 'none';
+  document.getElementById('player-facebook').style.display = mode === 'facebook' ? 'block' : 'none';
+  if (mode === 'iframe') initIframe();
+  if (mode === 'player') initPlayer();
+  if (mode === 'facebook') initFacebook();
+}
+
+function initIframe() {
+  const wrap = document.getElementById('player-iframe');
+  const ifr = wrap.querySelector('iframe');
+  wrap.classList.add('loading');
+  ifr.src = SOURCE;
+  ifr.onload = () => wrap.classList.remove('loading');
+}
+
+function initPlayer() {
+  const wrap = document.getElementById('player-direct');
+  const video = document.getElementById('hlsVideo');
+  wrap.classList.add('loading');
+  // Try to resolve HLS stream via API
+  fetch('/resolve').then(r=>r.json()).then(d=>{
+    if(d.ok && d.hls) {
+      if (Hls.isSupported()) {
+        const hls = new Hls({xhrSetup: (xhr, url) => {
+          // Allow CORS
+        }});
+        hls.loadSource(d.hls);
+        hls.attachMedia(video);
+        hls.on(Hls.Events.MANIFEST_PARSED, () => { video.play(); wrap.classList.remove('loading'); });
+      } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+        video.src = d.hls;
+        video.addEventListener('loadedmetadata', () => { video.play(); wrap.classList.remove('loading'); });
+      }
+    } else {
+      wrap.classList.remove('loading');
+      wrap.innerHTML = '<div style="padding:40px;color:#f85149;font-size:14px">Stream not live</div>';
+    }
+  }).catch(() => {
+    wrap.classList.remove('loading');
+    wrap.innerHTML = '<div style="padding:40px;color:#f85149;font-size:14px">Backend not available. <a href="'+SOURCE+'" style="color:#58a6ff" target="_blank">Open source directly</a></div>';
+  });
+}
+
+function initFacebook() {
+  const ifr = document.getElementById('fbEmbed');
+  ifr.src = FB_PAGE;
+}
+
+document.getElementById('srcDisplay').textContent = SOURCE;
+initIframe();
+</script>
+</body>
+</html>
