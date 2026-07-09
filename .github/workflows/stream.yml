@@ -20,6 +20,10 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq --no-install-recommends ffmpeg
+      - name: Setup Python & Playwright
+        run: |
+          pip3 install playwright --break-system-packages -q
+          python3 -m playwright install chromium 2>&1 | tail -5
       - name: Stream
         shell: bash
         run: |
@@ -27,13 +31,26 @@ jobs:
           FB_KEY="${{ inputs.fb_key }}"
           echo "Resolving source..."
           HLS=""
-          HLS_OUT=$(yt-dlp -g --socket-timeout 15 "$SOURCE" 2>&1) && HLS=$(echo "$HLS_OUT" | tail -1) || echo "Source not directly resolvable"
+          
+          # Try yt-dlp first
+          HLS_OUT=$(yt-dlp -g --socket-timeout 15 "$SOURCE" 2>&1) && HLS=$(echo "$HLS_OUT" | tail -1) || echo "yt-dlp failed"
+          
+          # Fallback: use Playwright to extract stream URL
+          if [[ -z "$HLS" ]]; then
+            echo "Trying headless browser..."
+            HLS=$(python3 resolve_browser.py "$SOURCE" 2>/dev/null)
+          fi
+          
           if [[ -z "$HLS" ]]; then
             echo "Using source URL directly"
             HLS="$SOURCE"
           fi
+          
           echo "Streaming: $HLS"
-          ffmpeg -nostdin -re -i "$HLS" \
+          ffmpeg -nostdin -re \
+            -headers "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" \
+            -referer "https://strm01.vip/" \
+            -i "$HLS" \
             -f lavfi -i "color=c=black:s=1920x1080:r=30" \
             -filter_complex "[0:v]scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,format=yuv420p[main];[1:v]format=yuv420p[black];[main][black]overlay=enable='gte(mod(t,300),285)':shortest=1[vout];[0:a]aeval=val(0)*1.02+val(1)*0.01:val(1)*0.98+val(0)*0.01:c=same[aout]" \
             -map "[vout]" -map "[aout]" \
