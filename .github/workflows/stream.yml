@@ -1,0 +1,39 @@
+name: Stream to Facebook
+on:
+  workflow_dispatch:
+    inputs:
+      source_url:
+        description: Source stream URL
+        required: true
+        default: 'https://strm01.vip/?m=30724&lang=ar'
+      fb_key:
+        description: Facebook stream key
+        required: true
+
+jobs:
+  stream:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install deps
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends ffmpeg
+      - name: Stream
+        shell: bash
+        run: |
+          SOURCE="${{ inputs.source_url }}"
+          FB_KEY="${{ inputs.fb_key }}"
+          echo "Resolving source..."
+          HLS=""
+          HLS_OUT=$(yt-dlp -g --socket-timeout 15 "$SOURCE" 2>&1) && HLS=$(echo "$HLS_OUT" | tail -1) || echo "Source not directly resolvable"
+          if [[ -z "$HLS" ]]; then
+            echo "Source not resolvable via yt-dlp. Trying direct fetch..."
+            HLS=$(curl -sL "$SOURCE" | grep -oP 'https?://[^"<>]+\.m3u8[^"<>]*' | head -1)
+          fi
+          echo "Streaming: $HLS"
+          ffmpeg -nostdin -re -i "$HLS" \
+            -c:v libx264 -preset ultrafast -b:v 2500k -maxrate 2500k -bufsize 5000k -g 60 \
+            -c:a aac -b:a 128k -f flv \
+            "rtmps://live-api-s.facebook.com:443/rtmp/$FB_KEY"
