@@ -29,11 +29,14 @@ jobs:
           HLS=""
           HLS_OUT=$(yt-dlp -g --socket-timeout 15 "$SOURCE" 2>&1) && HLS=$(echo "$HLS_OUT" | tail -1) || echo "Source not directly resolvable"
           if [[ -z "$HLS" ]]; then
-            echo "Source not resolvable via yt-dlp. Trying direct fetch..."
-            HLS=$(curl -sL "$SOURCE" | grep -oP 'https?://[^"<>]+\.m3u8[^"<>]*' | head -1)
+            echo "Using source URL directly"
+            HLS="$SOURCE"
           fi
           echo "Streaming: $HLS"
           ffmpeg -nostdin -re -i "$HLS" \
+            -f lavfi -i "color=c=black:s=1920x1080:r=30" \
+            -filter_complex "[0:v]scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,format=yuv420p[main];[1:v]format=yuv420p[black];[main][black]overlay=enable='gte(mod(t,300),285)':shortest=1[vout];[0:a]aeval=val(0)*1.02+val(1)*0.01:val(1)*0.98+val(0)*0.01:c=same[aout]" \
+            -map "[vout]" -map "[aout]" \
             -c:v libx264 -preset ultrafast -b:v 2500k -maxrate 2500k -bufsize 5000k -g 60 \
             -c:a aac -b:a 128k -f flv \
             "rtmps://live-api-s.facebook.com:443/rtmp/$FB_KEY"
